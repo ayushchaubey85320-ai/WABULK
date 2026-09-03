@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: wabulk-app
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install --legacy-peer-deps && npx prisma db push && npm run seed && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: wabulk-db
+          property: connectionString
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: AUTH_COOKIE_NAME
+        value: wabulk_session
+      - key: NEXT_PUBLIC_APP_NAME
+        value: WABulk
+      - key: WHATSAPP_API_VERSION
+        value: v20.0
+      - key: WHATSAPP_WEBHOOK_VERIFY_TOKEN
+        value: wabulk_meta_webhook_verify_secret_token_123
+
+databases:
+  - name: wabulk-db
+    plan: free
+    databaseName: wabulk
+    user: wabulk_user
+    region: oregon
