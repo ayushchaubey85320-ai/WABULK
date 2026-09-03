@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     region: oregon
-    buildCommand: npm install --include=dev --legacy-peer-deps && npm run deploy
+    buildCommand: npm install --legacy-peer-deps && npm run deploy
     startCommand: npm run start
     envVars:
       - key: DATABASE_URL
