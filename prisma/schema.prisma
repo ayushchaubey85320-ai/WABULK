@@ -1,0 +1,328 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  OPERATOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ContactStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TemplateCategory {
+  MARKETING
+  UTILITY
+  AUTHENTICATION
+}
+
+enum TemplateStatus {
+  DRAFT
+  PENDING_META
+  APPROVED
+  REJECTED
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  QUEUED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+enum AudienceType {
+  ALL
+  GROUPS
+  TAGS
+  CONTACTS
+}
+
+enum MessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  SKIPPED
+}
+
+model User {
+  id           String      @id @default(uuid())
+  name         String
+  email        String      @unique
+  passwordHash String
+  role         Role        @default(ADMIN)
+  status       UserStatus  @default(ACTIVE)
+  lastLoginAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  sessions     Session[]
+  campaigns    Campaign[]
+  auditLogs    AuditLog[]
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+}
+
+model Contact {
+  id          String        @id @default(uuid())
+  firstName   String
+  lastName    String?
+  phone       String        @unique // E.164 format, e.g. +919876543210
+  email       String?
+  country     String?       @default("IN")
+  status      ContactStatus @default(ACTIVE)
+  optedIn     Boolean       @default(true)
+  optedOutAt  DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  groups      ContactGroup[]
+  tags        ContactTag[]
+  campaignRecipients CampaignRecipient[]
+  messages    Message[]
+
+  @@index([phone])
+  @@index([email])
+  @@index([optedIn])
+  @@index([status])
+}
+
+model Group {
+  id          String         @id @default(uuid())
+  name        String         @unique
+  description String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  contacts    ContactGroup[]
+}
+
+model ContactGroup {
+  contactId String
+  groupId   String
+
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  group     Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, groupId])
+  @@index([groupId])
+  @@index([contactId])
+}
+
+model Tag {
+  id        String       @id @default(uuid())
+  name      String       @unique
+  color     String?      @default("#10B981")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  contacts  ContactTag[]
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@index([tagId])
+  @@index([contactId])
+}
+
+model Template {
+  id             String           @id @default(uuid())
+  name           String           @unique
+  language       String           @default("en_US")
+  category       TemplateCategory @default(MARKETING)
+  status         TemplateStatus   @default(APPROVED)
+  header         String?
+  body           String
+  footer         String?
+  variables      Json?            // Array of variable placeholders e.g. ["1", "2"]
+  metaTemplateId String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  campaigns      Campaign[]
+
+  @@index([name])
+  @@index([status])
+}
+
+model Campaign {
+  id              String         @id @default(uuid())
+  name            String
+  description     String?
+  status          CampaignStatus @default(DRAFT)
+  templateId      String
+  audienceType    AudienceType   @default(GROUPS)
+  audienceFilter  Json?          // { groupIds: [], tagIds: [], contactIds: [] }
+  variableMapping Json?          // { "1": "firstName", "2": "eventName" }
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  totalRecipients Int            @default(0)
+  sentCount       Int            @default(0)
+  deliveredCount  Int            @default(0)
+  readCount       Int            @default(0)
+  failedCount     Int            @default(0)
+  skippedCount    Int            @default(0)
+
+  createdById     String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  template        Template       @relation(fields: [templateId], references: [id])
+  createdBy       User?          @relation(fields: [createdById], references: [id])
+  recipients      CampaignRecipient[]
+  messages        Message[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([scheduledAt])
+}
+
+model CampaignRecipient {
+  id               String        @id @default(uuid())
+  campaignId       String
+  contactId        String
+  status           MessageStatus @default(QUEUED)
+  personalizedBody String?
+  errorMessage     String?
+  sentAt           DateTime?
+  deliveredAt      DateTime?
+  readAt           DateTime?
+  failedAt         DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  campaign         Campaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact          Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  message          Message?
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+  @@index([contactId])
+}
+
+model Message {
+  id                  String        @id @default(uuid())
+  campaignId          String?
+  campaignRecipientId String?       @unique
+  contactId           String
+  whatsappMessageId   String?       @unique
+  toPhone             String
+  templateName        String?
+  body                String
+  status              MessageStatus @default(QUEUED)
+  rawPayload          Json?
+  rawResponse         Json?
+  errorMessage        String?
+  errorCode           String?
+  sentAt              DateTime?
+  deliveredAt         DateTime?
+  readAt              DateTime?
+  failedAt            DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  campaign            Campaign?          @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignRecipient   CampaignRecipient? @relation(fields: [campaignRecipientId], references: [id], onDelete: SetNull)
+  contact             Contact            @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([whatsappMessageId])
+  @@index([status])
+  @@index([toPhone])
+  @@index([createdAt])
+  @@index([campaignId])
+}
+
+model WebhookEvent {
+  id          String   @id @default(uuid())
+  eventId     String   @unique
+  eventType   String
+  payload     Json
+  status      String   @default("PROCESSED")
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([eventId])
+  @@index([eventType])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  userEmail String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([action])
+  @@index([entity])
+  @@index([createdAt])
+}
+
+model WhatsAppConfig {
+  id                   String    @id @default(uuid())
+  businessAccountId    String?
+  phoneNumberId        String?
+  accessTokenEncrypted String?
+  apiVersion           String    @default("v20.0")
+  verifyToken          String?
+  isConfigured         Boolean   @default(false)
+  lastTestedAt         DateTime?
+  testStatus           String?   // "CONNECTED" | "FAILED" | "DEMO"
+  testMessage          String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@index([key])
+}
